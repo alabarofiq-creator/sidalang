@@ -1,0 +1,142 @@
+:root {
+  /* Global theme (kontras tinggi) */
+  --bg: #0f172a; /* slate-900 */
+  --bg-elev: #0b1220;
+  --border: #cbd5e1; /* slate-300 */
+
+  --text-on-dark: #e5e7eb; /* slate-200 */
+
+  /* Text inside cards */
+  --text-main: #0f172a; /* slate-900 */
+  --text-sub: #475569; /* slate-600 */
+
+  /* Card */
+  --card: #ffffff;
+
+  /* Form */
+  --placeholder: #94a3b8; /* slate-400 */
+
+  /* Accent */
+  --accent: #059669; /* emerald-600 */
+  --accent-hover: #047857; /* emerald-700 */
+  --accent-border: rgba(5, 150, 105, 0.55);
+
+  --code-bg: #f8fafc;
+
+  --shadow:
+    rgba(2, 6, 23, 0.12) 0 10px 25px -10px,
+    rgba(2, 6, 23, 0.08) 0 4px 10px -6px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text-on-dark);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Keep background dark even if OS reports dark */
+    --bg: #0f172a;
+    --bg-elev: #0b1220;
+    --code-bg: #0b1220;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-on-dark);
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid rgba(203, 213, 225, 0.35);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* subtle background (lebih ringan supaya tidak kusam) */
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(900px 420px at 15% -10%, rgba(5, 150, 105, 0.12), transparent 55%),
+    radial-gradient(760px 360px at 100% 0%, rgba(16, 185, 129, 0.1), transparent 50%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #root::before {
+    animation: bgFloat 14s ease-in-out infinite;
+  }
+
+  @keyframes bgFloat {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(10px);
+    }
+  }
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 800;
+  color: var(--accent);
+}
+
+/* Jangan gunakan ukuran h1 default yang terlalu besar untuk layout existing */
+h1 {
+  font-size: 28px;
+  letter-spacing: -0.6px;
+  margin: 0;
+}
+
+h2 {
+  font-size: 20px;
+  color: var(--text-main);
+}
+
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-main);
+  background: var(--code-bg);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+}
+
