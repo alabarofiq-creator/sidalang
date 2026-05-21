@@ -10,6 +10,7 @@ import Lembaga from './pages/Lembaga'
 import KategoriAnggota from './pages/KategoriAnggota'
 import TambahJenisLembaga from './pages/TambahJenisLembaga'
 import NotFound from './pages/NotFound'
+import BackupRestore from './pages/BackupRestore'
 
 
 
@@ -25,6 +26,7 @@ function App() {
             </RootLayout>
           }
         />
+
 
         <Route
           path="/lembaga"
@@ -79,6 +81,16 @@ function App() {
         />
 
 
+
+        <Route
+          path="/backup"
+          element={
+            <RootLayout>
+              <BackupRestore />
+            </RootLayout>
+          }
+        />
+
         <Route path="*" element={<RootLayout><NotFound /></RootLayout>} />
       </Routes>
     </BrowserRouter>
@@ -86,5 +98,8 @@ function App() {
 }
 
 export default App
+
+
+
 
 

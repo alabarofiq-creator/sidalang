@@ -11,101 +11,122 @@ const STORE_LEMBAGA = 'lembaga'
 // anggota: { id, nama, lembaga_id, jabatan, dusun, alamat, nomor_hp, pendidikan, masa_jabatan, foto, catatan, created_at }
 
 const dbPromise = openDB(DB_NAME, DB_VERSION, {
+  blocked() {
+    // Ini dipanggil ketika versi DB diblokir oleh koneksi lain.
+    // Tidak throw; biarkan aplikasi retry/refresh.
+    try {
+      console.warn('[IndexedDB] blocked() - another connection is blocking upgrade')
+    } catch {
+      // ignore
+    }
+
+  },
+
+  blocking() {
+    try {
+      console.warn('[IndexedDB] blocking() - closing other connections to upgrade')
+    } catch {
+      // ignore
+    }
+
+  },
+
+  terminated() {
+
+    try {
+      console.warn('[IndexedDB] terminated() - connection closed')
+    } catch {
+      // ignore
+    }
+  },
+
   upgrade(db, oldVersion, transaction) {
-    // Helper untuk memastikan index dibuat hanya jika belum ada (menghindari DuplicateError)
-    function ensureIndex(store, name, keyPath, options = { unique: false }) {
-      if (!store.indexNames.contains(name)) {
-        store.createIndex(name, keyPath, options)
+    // UPGRADE HANDLER: harus sinkron dan tanpa async/Promise custom.
+    // Hindari pola yang memicu:
+    // "Version change transaction was aborted in upgradeneeded event handler"
+
+
+    function ensureStore(storeName, keyPath) {
+      if (db.objectStoreNames.contains(storeName)) {
+        return transaction.objectStore(storeName)
+      }
+      return db.createObjectStore(storeName, { keyPath })
+    }
+
+    function ensureIndex(store, indexName, keyPath, options = undefined) {
+      // cek sebelum create untuk mencegah DuplicateError
+      if (!store.indexNames.contains(indexName)) {
+        store.createIndex(indexName, keyPath, options)
       }
     }
 
-    // STORE ANGGOTA
-    let anggotaStore
-    if (!db.objectStoreNames.contains(STORE_ANGGOTA)) {
-      const created = db.createObjectStore(STORE_ANGGOTA, { keyPath: 'id' })
-      ensureIndex(created, 'nama', 'nama', { unique: false })
-      ensureIndex(created, 'nik', 'nik', { unique: false })
-      ensureIndex(created, 'jabatan', 'jabatan', { unique: false })
-      ensureIndex(created, 'lembaga_id', 'lembaga_id', { unique: false })
-      ensureIndex(created, 'dusun', 'dusun', { unique: false })
-      anggotaStore = created
-    } else {
-      anggotaStore = transaction.objectStore(STORE_ANGGOTA)
-      // Pastikan index yang dibutuhkan ada walaupun store sudah ada
-      ensureIndex(anggotaStore, 'nama', 'nama', { unique: false })
-      ensureIndex(anggotaStore, 'nik', 'nik', { unique: false })
-      ensureIndex(anggotaStore, 'jabatan', 'jabatan', { unique: false })
-      ensureIndex(anggotaStore, 'lembaga_id', 'lembaga_id', { unique: false })
-      ensureIndex(anggotaStore, 'dusun', 'dusun', { unique: false })
-    }
+    // STORE: lembaga
+    const lembagaStore = ensureStore(STORE_LEMBAGA, 'id')
+    ensureIndex(lembagaStore, 'nama', 'nama', { unique: false })
 
-    // STORE LEMBAGA
-    let lembagaStore
-    if (!db.objectStoreNames.contains(STORE_LEMBAGA)) {
-      const created = db.createObjectStore(STORE_LEMBAGA, { keyPath: 'id' })
-      ensureIndex(created, 'nama', 'nama', { unique: false })
-      lembagaStore = created
-    } else {
-      lembagaStore = transaction.objectStore(STORE_LEMBAGA)
-      ensureIndex(lembagaStore, 'nama', 'nama', { unique: false })
-    }
+    // STORE: anggota
+    const anggotaStore = ensureStore(STORE_ANGGOTA, 'id')
+    ensureIndex(anggotaStore, 'nama', 'nama', { unique: false })
+    ensureIndex(anggotaStore, 'nik', 'nik', { unique: false })
+    ensureIndex(anggotaStore, 'jabatan', 'jabatan', { unique: false })
+    ensureIndex(anggotaStore, 'lembaga_id', 'lembaga_id', { unique: false })
+    ensureIndex(anggotaStore, 'dusun', 'dusun', { unique: false })
 
-    // Migration dari versi lama
+    // Migration v2 -> v3: mapping label/kategori => nama/lembaga_id
+    // Tetap lakukan sinkron-first: gunakan low-level request tanpa membuat Promise.
     if (oldVersion < 3) {
-      // Catatan: Handler `upgrade()` di `idb` tidak selalu di-parse sebagai async.
-      // Pakai Promise-based yang memastikan semua request put selesai sebelum upgrade handler selesai.
-
+      // lembaga
       const lembagaReq = lembagaStore.getAll()
-      const anggotaReq = anggotaStore.getAll()
-
-      return Promise.all([lembagaReq, anggotaReq]).then(([lembagaItems, anggotaItems]) => {
-        const puts = []
-
-        // update lembaga
+      lembagaReq.onsuccess = (e) => {
+        const lembagaItems = e?.target?.result ?? []
         for (const item of lembagaItems) {
-          const nama = item?.nama ?? item?.label ?? ''
-          const icon = item?.icon ?? ''
-          const created_at = item?.created_at ?? item?.createdAt ?? Date.now()
           const id = normalizeLembagaId(item?.id ?? '')
           if (!id) continue
 
-          puts.push(
-            lembagaStore.put({
-              ...item,
-              id,
-              nama: String(nama).trim(),
-              icon: String(icon ?? ''),
-              created_at,
-            })
-          )
-        }
+          const nama = item?.nama ?? item?.label ?? ''
+          const icon = item?.icon ?? ''
+          const created_at = item?.created_at ?? item?.createdAt ?? Date.now()
 
-        // update anggota
+          lembagaStore.put({
+            ...item,
+            id,
+            nama: String(nama).trim(),
+            icon: String(icon ?? '').trim(),
+            created_at,
+          })
+        }
+      }
+      lembagaReq.onerror = () => {
+        // Biarkan openDB gagal (fallback delete akan menangkap dari luar)
+      }
+
+      // anggota
+      const anggotaReq = anggotaStore.getAll()
+      anggotaReq.onsuccess = (e) => {
+        const anggotaItems = e?.target?.result ?? []
         for (const item of anggotaItems) {
           const lembaga_id = normalizeLembagaId(item?.lembaga_id ?? item?.kategori ?? '')
           if (!lembaga_id) continue
 
           const created_at = item?.created_at ?? item?.createdAt ?? Date.now()
 
-          puts.push(
-            anggotaStore.put({
-              ...item,
-              lembaga_id,
-              created_at,
-              // kategori dibiarkan (opsional) untuk kompatibilitas data lama
-            })
-          )
+          anggotaStore.put({
+            ...item,
+            lembaga_id,
+            created_at,
+          })
         }
-
-        return Promise.all(puts)
-      })
+      }
+      anggotaReq.onerror = () => {
+        // Biarkan openDB gagal (fallback delete akan menangkap dari luar)
+      }
     }
 
-
-    // Jika tidak migrate, biarkan upgrade selesai normal.
     return undefined
   },
 })
+
+
 
 
 
@@ -471,4 +492,122 @@ export async function getLembagaList() {
     .filter((x) => x.id && x.nama)
     .sort((a, b) => String(a.nama).localeCompare(String(b.nama)))
 }
+
+
+
+function normalizeBackupLembagaItem(item) {
+  const id = normalizeLembagaId(item?.id ?? item?.slug ?? item?.key ?? '')
+  return {
+    ...item,
+    id,
+    nama: String(item?.nama ?? item?.label ?? '').trim(),
+    icon: String(item?.icon ?? '').trim(),
+    created_at: item?.created_at ?? item?.createdAt ?? Date.now(),
+  }
+}
+
+
+function normalizeBackupAnggotaItem(item) {
+  // Important: foto is base64 string (or '' / null)
+  const lembaga_id = normalizeLembagaId(item?.lembaga_id ?? item?.kategori ?? '')
+  const foto = normalizeFoto(item?.foto)
+
+  return {
+    ...item,
+    id: String(item?.id ?? '').trim(),
+    nama: String(item?.nama ?? '').trim(),
+    lembaga_id,
+    jabatan: String(item?.jabatan ?? '').trim(),
+    dusun: String(item?.dusun ?? '').trim(),
+    alamat: String(item?.alamat ?? '').trim(),
+    nomor_hp: String(item?.nomor_hp ?? '').trim(),
+    pendidikan: String(item?.pendidikan ?? '').trim(),
+    masa_jabatan: String(item?.masa_jabatan ?? '').trim(),
+    foto,
+    catatan: String(item?.catatan ?? '').trim(),
+    nik: String(item?.nik ?? '').trim(),
+    created_at: item?.created_at ?? item?.createdAt ?? Date.now(),
+  }
+}
+
+
+export async function backupAllData() {
+  await ensureDummyData()
+  const db = await dbPromise
+
+  const lembaga = await db.getAll(STORE_LEMBAGA)
+  const anggota = await db.getAll(STORE_ANGGOTA)
+
+  // Keep as-is so base64 foto remains untouched
+  const exported_at = new Date().toISOString().slice(0, 10)
+
+  return {
+    lembaga,
+    anggota,
+    exported_at,
+  }
+}
+
+export async function restoreAllData(payload) {
+  await ensureDummyData()
+  const db = await dbPromise
+
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Format backup tidak valid')
+  }
+
+  const { lembaga, anggota } = payload
+
+  if (!Array.isArray(lembaga) || !Array.isArray(anggota)) {
+    throw new Error('Backup harus berisi lembaga[] dan anggota[]')
+  }
+
+  // Normalize first (so we can validate before touching DB)
+  const normalizedLembaga = lembaga.map(normalizeBackupLembagaItem)
+  const normalizedAnggota = anggota.map(normalizeBackupAnggotaItem)
+
+  // Basic validation to avoid corrupt restore
+  if (normalizedLembaga.some((x) => !x.id || !x.nama)) {
+    // Allow empty? Not expected; treat as error to prevent broken relasi.
+    throw new Error('Data lembaga pada backup tidak valid')
+  }
+
+  if (normalizedAnggota.some((x) => !x.id || !x.lembaga_id)) {
+    throw new Error('Data anggota pada backup tidak valid')
+  }
+
+  // Ensure no duplicates by clearing first, then add with keyPath.
+  const tx = db.transaction([STORE_LEMBAGA, STORE_ANGGOTA], 'readwrite')
+  const lembagaStore = tx.objectStore(STORE_LEMBAGA)
+  const anggotaStore = tx.objectStore(STORE_ANGGOTA)
+
+  // Clear both stores first
+  await Promise.all([lembagaStore.clear(), anggotaStore.clear()])
+
+  // Insert lembaga first so relation lembaga_id is valid for UI consistency
+  for (const l of normalizedLembaga) {
+    await lembagaStore.put({
+      ...l,
+      id: normalizeLembagaId(l.id),
+      nama: String(l.nama ?? '').trim(),
+      icon: String(l.icon ?? '').trim(),
+      created_at: l.created_at ?? Date.now(),
+    })
+  }
+
+  for (const a of normalizedAnggota) {
+    await anggotaStore.put({
+      ...a,
+      id: String(a.id).trim(),
+      lembaga_id: normalizeLembagaId(a.lembaga_id),
+      foto: normalizeFoto(a.foto),
+      nama: String(a.nama ?? '').trim(),
+      created_at: a.created_at ?? Date.now(),
+    })
+  }
+
+  await tx.done
+}
+
+
 

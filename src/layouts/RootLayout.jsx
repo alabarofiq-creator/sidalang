@@ -17,7 +17,12 @@ export default function RootLayout({ children }) {
           <Link className="navlink" to="/tambah-anggota">
             Tambah
           </Link>
+
+          <Link className="navlink" to="/backup">
+            Backup & Restore
+          </Link>
         </nav>
+
 
       </header>
 
